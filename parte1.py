@@ -3,6 +3,10 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
+np.random.seed(42)
+random.seed(42)
+MAX_SPAN = 20
+
 # numba pra otimizacao
 @njit
 def custo(rota, matriz):
@@ -15,9 +19,16 @@ def custo(rota, matriz):
 
 def shake(rota, k):
     rota_nova = rota[:]
+    n = len(rota)
+    max_dist = int(0.3 * n)
+
     for _ in range(k):
-        i, j = random.sample(range(1, len(rota)), 2)
-        rota_nova[i], rota_nova[j] = rota_nova[j], rota_nova[i]
+        i = random.randint(1, n - 1)
+        j_min = max(1, i - max_dist)
+        j_max = min(n - 1, i + max_dist)
+        j = random.randint(j_min, j_max)
+        if i != j:
+            rota_nova[i], rota_nova[j] = rota_nova[j], rota_nova[i]
     return rota_nova
 
 
@@ -31,15 +42,17 @@ def first_improvement(rota, matriz, vizinhancas):
     return rota
 
 def swap_vizinhanca(rota):
-    for i in range(1, len(rota)-1):
-        for j in range(i+1, len(rota)):
+    n = len(rota)
+    for i in range(1, n-1):
+        for j in range(i+1, min(i+1+MAX_SPAN, n)):
             r = rota[:]
             r[i], r[j] = r[j], r[i]
             yield r
 
 def insert_vizinhanca(rota):
-    for i in range(1, len(rota)):
-        for j in range(1, len(rota)):
+    n = len(rota)
+    for i in range(1, n-1):
+        for j in range(1, min(i+1+MAX_SPAN, n)):
             if i != j:
                 r = rota[:]
                 cidade = r.pop(i)
@@ -47,8 +60,9 @@ def insert_vizinhanca(rota):
                 yield r
 
 def dois_opt_vizinhanca(rota):
-    for i in range(1, len(rota)-2):
-        for j in range(i+1, len(rota)-1):
+    n = len(rota)
+    for i in range(1, n-2):
+        for j in range(i+1, min(i+1+MAX_SPAN, n)):
             r = rota[:]
             r[i:j] = reversed(r[i:j])
             yield r
@@ -56,7 +70,7 @@ def dois_opt_vizinhanca(rota):
 def get_initial_solution(matriz):
     n = len(matriz)
     nao_visitados = set(range(n))
-    start = random.randrange(n)
+    start = 0
     rota = [start]
     nao_visitados.remove(0)
     atual = 0

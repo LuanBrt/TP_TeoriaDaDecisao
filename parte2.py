@@ -1,11 +1,17 @@
 import matplotlib.pyplot as plt 
 import numpy as np
+import random
 from tqdm import tqdm
 from parte1 import (custo, shake,
                   swap_vizinhanca, insert_vizinhanca,
                   dois_opt_vizinhanca, get_initial_solution)
 
+import pandas as pd
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+np.random.seed(42)
+random.seed(42)
 
 def first_improvement_scalar(rota, vizinhancas, custo_eval):
     melhor_custo = custo_eval(rota)
@@ -25,7 +31,7 @@ def BVNS_scalarizado_EPS(matriz_tempo, matriz_dist, eps=None):
     def custo_scalar(rota):
         t, d = biobjetivo_custos(rota, matriz_tempo, matriz_dist)
         viol = max(0.0, d - eps)  # violação da restrição
-        return (penalty if viol > 0 else t)
+        return t + penalty * viol
 
     sol = get_initial_solution(matriz_dist)
     melhor = sol[:]
@@ -58,7 +64,7 @@ def BVNS_scalarizado_PW(matriz_tempo, matriz_dist, w=(0.5, 0.5), eps=None):
     melhor_custo = custo_scalar(melhor)
     vizinhancas = [swap_vizinhanca, insert_vizinhanca, dois_opt_vizinhanca]
 
-    for _ in tqdm(range(200)):
+    for _ in tqdm(range(100)):
         k = 1
         while k <= 3:
             s_prime = shake(melhor, k)
@@ -82,18 +88,18 @@ def pareto_front(pontos):
     return pareto
 
 
-def run_pw_run(args):
+def run_pw(args):
     tempo, dist, pesos = args
 
-    _, (f1_1, f2_1) = BVNS_scalarizado_PW(tempo, dist, w=(1.0, 0.0))
+    rota1, (f1_1, f2_1) = BVNS_scalarizado_PW(tempo, dist, w=(1.0, 0.0))
     z1 = (f1_1, f2_1)
 
     # z2: minimiza f2  (peso (0,1))
-    _, (f1_2, f2_2) = BVNS_scalarizado_PW(tempo, dist, w=(0.0, 1.0))
+    rota2, (f1_2, f2_2) = BVNS_scalarizado_PW(tempo, dist, w=(0.0, 1.0))
     z2 = (f1_2, f2_2)
 
     tol = 1e-3
-    max_depth = 7
+    max_depth = 3
     def almost_equal(a, b, eps=tol):
         return abs(a - b) <= eps
 
@@ -103,11 +109,11 @@ def run_pw_run(args):
     visited = set()  # para evitar duplicatas
     sol = []
 
-    def add_point(p):
+    def add_point(r, p):
         key = (round(p[0], 10), round(p[1], 10))
         if key not in visited:
             visited.add(key)
-            sol.append(p)
+            sol.append((r, p))
 
     def split(zl, zr, depth):
         if depth > max_depth:
@@ -120,26 +126,26 @@ def run_pw_run(args):
         if almost_equal(lam1, 0.0) and almost_equal(lam2, 0.0):
             return
 
-        _, (f1, f2) = BVNS_scalarizado_PW(tempo, dist, w=(lam1, lam2))
+        rota, (f1, f2) = BVNS_scalarizado_PW(tempo, dist, w=(lam1, lam2))
         z = (f1, f2)
 
         # Critérios de parada
         if same_point(z, zl) or same_point(z, zr):
             return
 
-        add_point(z)
+        add_point(rota, z)
 
         split(zl, z, depth + 1)
         split(z, zr, depth + 1)
 
-    add_point(z1)
-    add_point(z2)
+    add_point(rota1, z1)
+    add_point(rota2, z2)
     split(z1, z2, depth=0)
 
     sol.sort(key=lambda p: (p[0], p[1]))
     return sol
 
-def run_eps_run(args):
+def run_eps(args):
     tempo, dist, fronteiras_pw = args
 
     # utopia f*
@@ -148,13 +154,13 @@ def run_eps_run(args):
     # nadir (worst) f_o
     f2_o = max(d for _, d in fronteiras_pw)
 
-    eps_vals = np.linspace(f2_star, f2_o, 50)
+    eps_vals = np.linspace(f2_star, f2_o, 20)
 
     sol_set = []
     for eps in eps_vals:
         rota, (t, d) = BVNS_scalarizado_EPS(tempo, dist, eps=eps)
         if d <= eps:
-            sol_set.append((t, d))
+            sol_set.append((rota, (t, d)))
 
     return sol_set
 
@@ -170,18 +176,39 @@ def main():
     print("Executando método Soma Ponderada (Pw)...")
     fronteiras_pw = []
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(run_pw_run, (tempo, dist, pesos)) for _ in range(runs)]
-        for future in as_completed(futures):
-            fronteiras_pw.append(future.result())
+        futures = [executor.submit(run_pw, (tempo, dist, pesos)) for _ in range(runs)]
+        all_rows_pw = []
+        for run_id, future in enumerate(as_completed(futures), start=1):
+            result = future.result()  
+            for traj, cost in result:
+                all_rows_pw.append({
+                    "run": run_id,
+                    "trajectory": traj,
+                    "cost": cost
+                })
+            fronteiras_pw.append([cost for _, cost in result])
+
+    
+    df_pw = pd.DataFrame(all_rows_pw)
+    df_pw.to_csv("rotas_pw.csv", index=False)
 
     print("Executando método Epsilon Restrito (Pε)...")
     fronteiras_eps = []
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(run_eps_run, (tempo, dist, fronteiras_pw[0])) for _ in range(runs)] # Passamos a fronteira Pw da primeira run, para nao recomputar as solucoes nadir e utopia
-        for future in as_completed(futures):
-            fronteiras_eps.append(future.result())
+        futures = [executor.submit(run_eps, (tempo, dist, fronteiras_pw[0])) for _ in range(runs)] # Passamos a fronteira Pw da primeira run, para nao recomputar as solucoes nadir e utopia
+        all_rows_eps = []
+        for run_id, future in enumerate(as_completed(futures), start=1):
+            result = future.result()  
+            for traj, cost in result:
+                all_rows_eps.append({
+                    "run": run_id,
+                    "trajectory": traj,
+                    "cost": cost
+                })
+            fronteiras_eps.append([cost for _, cost in result])
     
-
+    df_eps = pd.DataFrame(all_rows_eps)
+    df_eps.to_csv("rotas_eps.csv", index=False)
 
     # --- (c) Plot das fronteiras ---
     plt.figure(figsize=(8,6))
@@ -199,7 +226,7 @@ def main():
     plt.ylabel("Distância")
     plt.title("Fronteiras - Soma Ponderada (Pw)")
     plt.legend()
-    plt.savefig("fronteira_pw.png", dpi=150)
+    plt.savefig("fronteira_pw2.png", dpi=150)
 
     plt.figure(figsize=(8,6))
     for i, fronteira in enumerate(fronteiras_eps):
@@ -215,7 +242,7 @@ def main():
     plt.ylabel("Distância")
     plt.title("Fronteiras - Epsilon Restrito (Pε)")
     plt.legend()
-    plt.savefig("fronteira_eps.png", dpi=150)
+    plt.savefig("fronteira_eps2.png", dpi=150)
     plt.show()
 
 
