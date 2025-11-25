@@ -109,7 +109,7 @@ def BVNS(matriz, kmax=3, max_iter=1000):
     return melhor, melhor_custo, historico
 
 def main():
-    task = 'tempo'
+    task = 'data/tempo'
     matriz_c = np.loadtxt(f"{task}.csv", delimiter=",")
 
     resultados = []

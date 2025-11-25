@@ -167,8 +167,8 @@ def run_eps(args):
 # ----------- Experimentos -----------
 
 def main():
-    tempo = np.loadtxt("tempo.csv", delimiter=",")
-    dist = np.loadtxt("distancia.csv", delimiter=",")
+    tempo = np.loadtxt("data/tempo.csv", delimiter=",")
+    dist = np.loadtxt("data/distancia.csv", delimiter=",")
     runs = 5
     pesos = np.linspace(0, 1, 20)
     
@@ -190,7 +190,7 @@ def main():
 
     
     df_pw = pd.DataFrame(all_rows_pw)
-    df_pw.to_csv("rotas_pw.csv", index=False)
+    df_pw.to_csv("runs/rotas_pw.csv", index=False)
 
     print("Executando método Epsilon Restrito (Pε)...")
     fronteiras_eps = []
@@ -208,7 +208,7 @@ def main():
             fronteiras_eps.append([cost for _, cost in result])
     
     df_eps = pd.DataFrame(all_rows_eps)
-    df_eps.to_csv("rotas_eps.csv", index=False)
+    df_eps.to_csv("runs/rotas_eps.csv", index=False)
 
     # --- (c) Plot das fronteiras ---
     plt.figure(figsize=(8,6))
