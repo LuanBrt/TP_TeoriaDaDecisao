@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 from tqdm import tqdm
-from parte1 import (custo, shake,
+from mono_objective import (custo, shake,
                   swap_vizinhanca, insert_vizinhanca,
                   dois_opt_vizinhanca, get_initial_solution)
 
